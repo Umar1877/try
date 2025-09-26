@@ -7,7 +7,7 @@ async function ensureDir(dirPath: string) {
   await fs.mkdir(dirPath, { recursive: true });
 }
 
-async function readJsonArray<T = any>(filePath: string): Promise<T[]> {
+async function readJsonArray<T = unknown>(filePath: string): Promise<T[]> {
   try {
     const data = await fs.readFile(filePath, "utf8");
     const parsed = JSON.parse(data);
@@ -17,7 +17,7 @@ async function readJsonArray<T = any>(filePath: string): Promise<T[]> {
   }
 }
 
-async function writeJsonArray(filePath: string, data: any[]) {
+async function writeJsonArray(filePath: string, data: unknown[]) {
   const tmpPath = `${filePath}.tmp`;
   await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), "utf8");
   await fs.rename(tmpPath, filePath);
@@ -96,16 +96,37 @@ export async function POST(req: NextRequest) {
     }
 
     await ensureDir(DATA_DIR);
-    const list = await readJsonArray<any>(JSON_PATH);
+    const list = await readJsonArray<unknown>(JSON_PATH);
 
     // If an existing record has same id OR same key fields, we skip adding a duplicate.
     const exists = list.find(
-      (p) =>
-        p.id === id ||
-        (p.projectName === projectName &&
-          p.client === client &&
-          p.year === year &&
-          p.category === category)
+      (p) => {
+        if (
+          typeof p === "object" &&
+          p !== null &&
+          "id" in p &&
+          "projectName" in p &&
+          "client" in p &&
+          "year" in p &&
+          "category" in p
+        ) {
+          const proj = p as {
+            id: string;
+            projectName: string;
+            client: string;
+            year: string;
+            category: string;
+          };
+          return (
+            proj.id === id ||
+            (proj.projectName === projectName &&
+              proj.client === client &&
+              proj.year === year &&
+              proj.category === category)
+          );
+        }
+        return false;
+      }
     );
 
     const newRecord = {
@@ -160,9 +181,11 @@ export async function DELETE(req: NextRequest) {
     }
 
     await ensureDir(DATA_DIR);
-    const list = await readJsonArray<any>(JSON_PATH);
+    const list = await readJsonArray<unknown>(JSON_PATH);
 
-    const projectIndex = list.findIndex((p) => p.id === id);
+    const projectIndex = list.findIndex(
+      (p) => typeof p === "object" && p !== null && "id" in p && (p as { id: string }).id === id
+    );
     if (projectIndex === -1) {
       return NextResponse.json(
         { success: false, message: "Project not found" },
@@ -170,7 +193,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const project = list[projectIndex];
+    const project = list[projectIndex] as { imageUrl?: string };
     if (project.imageUrl) {
       try {
         const imagePath = path.join(process.cwd(), "public", project.imageUrl);
@@ -235,9 +258,9 @@ export async function PUT(req: NextRequest) {
     } catch {}
 
     await ensureDir(DATA_DIR);
-    const list = await readJsonArray<any>(JSON_PATH);
+    const list = await readJsonArray<unknown>(JSON_PATH);
 
-    const projectIndex = list.findIndex((p) => p.id === id);
+    const projectIndex = list.findIndex((p) => typeof p === "object" && p !== null && "id" in p && (p as { id: string }).id === id);
     if (projectIndex === -1) {
       return NextResponse.json(
         { success: false, message: "Project not found" },
@@ -245,7 +268,7 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const existingProject = list[projectIndex];
+    const existingProject = list[projectIndex] as { [key: string]: string };
     let imageUrl = existingProject.imageUrl;
 
     // Handle new image upload
